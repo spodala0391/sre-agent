@@ -1,0 +1,2 @@
+	DeploymentReplicasUnavailable	awaiting_approval	nano>super	11s to fix-ready	0s total	Memory limit for cartservice was reduced from 128Mi to 32Mi in deployment revision 4, caus
+{"nano":{"calls":3,"prompt_tokens":961,"completion_tokens":212,"avg_latency_ms":1530},"super":{"calls":17,"prompt_tokens":48336,"completion_tokens":2411,"avg_latency_ms":1506}}
