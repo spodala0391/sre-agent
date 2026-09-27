@@ -22,10 +22,13 @@ case "${1:-}" in
   pod-delete)
     kubectl apply -f k8s/litmus-pod-delete.yaml ;;
   reset)
-    kubectl -n $NS rollout undo deploy/cartservice || true
-    kubectl -n $NS rollout undo deploy/checkoutservice || true
-    kubectl apply -f k8s/config-demo.yaml && kubectl -n $NS rollout restart deploy/edge-proxy
-    kubectl -n $NS delete chaosengine --all --ignore-not-found ;;
+    # re-apply the known-good spec (safe even after the agent has already rolled back)
+    kubectl apply -n $NS -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/release/kubernetes-manifests.yaml >/dev/null
+    kubectl apply -f k8s/config-demo.yaml >/dev/null && kubectl -n $NS rollout restart deploy/edge-proxy
+    kubectl -n $NS delete chaosengine --all --ignore-not-found 2>/dev/null || true
+    kubectl -n $NS rollout status deploy/cartservice --timeout=180s
+    kubectl -n $NS rollout status deploy/checkoutservice --timeout=180s
+    kubectl -n $NS rollout status deploy/edge-proxy --timeout=180s ;;
   *)
     echo "usage: $0 {oom|bad-image|bad-config|pod-delete|reset}"; exit 1 ;;
 esac
