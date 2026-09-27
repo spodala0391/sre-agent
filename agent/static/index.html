@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SRE Agent</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#8a90a0;--line:#262a35;
+--nano:#4cc38a;--super:#5b9cf5;--ultra:#c77dff;--warn:#f5a524;--bad:#f25f5c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;margin:0}main{padding:16px 20px;display:grid;gap:16px;max-width:1100px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.usage{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.tile b{font-size:22px;display:block}.tile span{color:var(--muted);font-size:12px}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.nano{background:#4cc38a22;color:var(--nano)}.super{background:#5b9cf522;color:var(--super)}.ultra{background:#c77dff22;color:var(--ultra)}
+.status{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.awaiting_approval{color:var(--warn)}.remediated{color:var(--nano)}.failed{color:var(--bad)}
+ol{margin:8px 0 0;padding-left:18px}li{margin:3px 0;color:#c9ccd6}
+.tl-stage{color:var(--muted);font-size:12px;margin-right:6px}
+button{background:#2a3040;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.ok{background:#1f6f4a;border-color:#2b8a5e}.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+pre{white-space:pre-wrap;background:#0c0e12;padding:8px;border-radius:6px;margin:8px 0 0;font-size:12px}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<header><h1>Self-Healing SRE Agent</h1><span class="muted" id="health"></span></header>
+<main>
+  <section class="card"><div class="muted" style="margin-bottom:8px">Model tier usage</div><div class="usage" id="usage"></div></section>
+  <section id="incidents"></section>
+</main>
+<script>
+const fmt=t=>new Date(t*1000).toLocaleTimeString();
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const TOKEN=new URLSearchParams(location.search).get("token")||"";
+async function act(id,verb){const r=await fetch(`/incidents/${id}/${verb}`,{method:"POST",headers:{"X-Agent-Token":TOKEN}});
+  if(r.status===401)alert("Approval needs the agent token: open the dashboard as /?token=<AGENT_TOKEN>");load();}
+async function load(){
+  const [inc,use,h]=await Promise.all([fetch("/incidents").then(r=>r.json()),fetch("/usage").then(r=>r.json()),fetch("/healthz").then(r=>r.json())]);
+  document.getElementById("health").textContent=h.ok?(h.dry_run?"dry-run mode":"connected"):"missing config: "+h.missing_config.join(", ");
+  const total=Object.values(use).reduce((a,s)=>a+s.calls,0)||1;
+  document.getElementById("usage").innerHTML=["nano","super","ultra"].map(t=>{const s=use[t]||{calls:0,prompt_tokens:0,completion_tokens:0,avg_latency_ms:0};
+    return `<div class="tile"><span class="tag ${t}">${t}</span><b>${s.calls} calls · ${Math.round(100*s.calls/total)}%</b>
+    <span>${(s.prompt_tokens+s.completion_tokens).toLocaleString()} tokens · ${s.avg_latency_ms} ms avg</span></div>`}).join("");
+  document.getElementById("incidents").innerHTML=inc.length?inc.map(i=>{
+    const mttr=i.resolved_at?` · recovered in ${Math.round(i.resolved_at-i.created_at)}s`:"";
+    const d=i.diagnosis||{};
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <b>${esc(i.alert.labels?.alertname||"alert")} · ${esc(i.alert.labels?.namespace||"")}</b>
+        <span class="status ${i.status}">${i.status.replace("_"," ")}${mttr}</span></div>
+      <div class="muted">#${i.id} · ${fmt(i.created_at)}</div>
+      <ol>${i.timeline.map(e=>`<li><span class="tl-stage">${fmt(e.t)} ${e.stage}</span>${e.tier?`<span class="tag ${e.tier}">${e.tier}</span> `:""}${esc(e.detail)}</li>`).join("")}</ol>
+      ${d.root_cause?`<pre><b>Root cause:</b> ${esc(d.root_cause)}\n<b>Action:</b> ${esc(JSON.stringify(i.proposed_action))}\n<b>Why:</b> ${esc(d.rationale)}</pre>`:""}
+      ${i.status==="awaiting_approval"&&i.proposed_action?.tool&&i.proposed_action.tool!=="none"?`<div class="row">
+        <button class="ok" onclick="act('${i.id}','approve')">Approve fix</button><button onclick="act('${i.id}','reject')">Reject</button></div>`:""}
+      ${i.action_result?`<pre>${esc(i.action_result)}</pre>`:""}
+      ${i.postmortem?`<div class="row"><a href="/incidents/${i.id}/postmortem" target="_blank" style="color:var(--ultra)">View blameless postmortem →</a></div>`:""}
+    </div>`}).join(""):`<div class="card muted">No incidents yet. Inject a fault with scripts/inject-fault.sh</div>`;
+}
+load();setInterval(load,3000);
+</script>
+</body>
+</html>

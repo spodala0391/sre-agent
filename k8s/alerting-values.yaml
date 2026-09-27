@@ -1,0 +1,53 @@
+# Helm values for kube-prometheus-stack: route alerts from the app namespace to the agent,
+# and add a few fast-firing demo rules (defaults wait 15m, too slow for a demo).
+alertmanager:
+  config:
+    global: {resolve_timeout: 5m}
+    route:
+      receiver: "null"
+      group_by: [alertname, namespace]
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 1h
+      routes:
+        - receiver: sre-agent
+          matchers: ['namespace="app"']
+    receivers:
+      - name: "null"
+      - name: sre-agent
+        webhook_configs:
+          - url: http://sre-agent.sre-agent:8080/alert
+            send_resolved: false
+
+additionalPrometheusRulesMap:
+  sre-demo:
+    groups:
+      - name: sre-demo
+        rules:
+          - alert: PodCrashLooping
+            expr: increase(kube_pod_container_status_restarts_total{namespace="app"}[3m]) > 2
+            for: 30s
+            labels: {severity: high}
+            annotations:
+              summary: "{{ $labels.pod }} restarting repeatedly"
+          - alert: PodOOMKilled
+            expr: kube_pod_container_status_last_terminated_reason{namespace="app",reason="OOMKilled"} == 1
+            for: 0m
+            labels: {severity: high}
+            annotations:
+              summary: "{{ $labels.pod }} container {{ $labels.container }} was OOMKilled"
+          - alert: PodImagePullFailing
+            expr: kube_pod_container_status_waiting_reason{namespace="app",reason=~"ImagePullBackOff|ErrImagePull"} == 1
+            for: 30s
+            labels: {severity: high}
+            annotations:
+              summary: "{{ $labels.pod }} cannot pull its image (rollout stuck)"
+          - alert: DeploymentReplicasUnavailable
+            expr: kube_deployment_status_replicas_unavailable{namespace="app"} > 0
+            for: 1m
+            labels: {severity: medium}
+            annotations:
+              summary: "{{ $labels.deployment }} has unavailable replicas"
+
+grafana:
+  enabled: false

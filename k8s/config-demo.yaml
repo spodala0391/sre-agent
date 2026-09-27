@@ -1,0 +1,40 @@
+# Small nginx service whose config lives in a ConfigMap. The "bad-config" fault pushes a broken
+# nginx.conf; the agent can restore it from the sre-agent/last-known-good annotation.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-proxy-config
+  namespace: app
+  annotations:
+    sre-agent/last-known-good: '{"default.conf": "server {\n  listen 8080;\n  location / { return 200 \"ok\\n\"; }\n}\n"}'
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      location / { return 200 "ok\n"; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-proxy
+  namespace: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: edge-proxy}
+  template:
+    metadata:
+      labels: {app: edge-proxy}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports: [{containerPort: 8080}]
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+          readinessProbe:
+            httpGet: {path: /, port: 8080}
+      volumes:
+        - name: conf
+          configMap: {name: edge-proxy-config}

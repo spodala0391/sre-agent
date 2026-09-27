@@ -1,0 +1,37 @@
+# In-cluster deployment of the agent (used for the local k3d demo).
+# Create the secret first:
+#   kubectl -n sre-agent create secret generic sre-agent-env --from-env-file=.env
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: sre-agent}
+  template:
+    metadata:
+      labels: {app: sre-agent}
+    spec:
+      serviceAccountName: sre-agent
+      containers:
+        - name: agent
+          image: sre-agent:dev          # built by scripts/setup-cluster.sh and imported into k3d
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          envFrom: [{secretRef: {name: sre-agent-env}}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+spec:
+  selector: {app: sre-agent}
+  ports: [{port: 8080, targetPort: 8080}]

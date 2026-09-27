@@ -1,0 +1,23 @@
+# Optional Litmus experiment (requires the pod-delete ChaosExperiment installed from ChaosHub
+# and a litmus-admin service account in the app namespace). The scripts/inject-fault.sh faults
+# work without Litmus; use this if you want the chaos-engineering angle in the demo.
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: cartservice-pod-delete
+  namespace: app
+spec:
+  engineState: active
+  appinfo:
+    appns: app
+    applabel: app=cartservice
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - {name: TOTAL_CHAOS_DURATION, value: "60"}
+            - {name: CHAOS_INTERVAL, value: "10"}
+            - {name: FORCE, value: "true"}
